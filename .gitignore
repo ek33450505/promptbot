@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.coverage
+*.pyc
+dist/
+build/
+*.egg-info/
+.promptopt.json

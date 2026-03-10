@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "promptbot"
+version = "0.1.0"
+description = "Optimize rough terminal prompts into clearer, LLM-ready requests."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "click>=8.1",
+  "rich>=13.7",
+]
+
+[project.scripts]
+promptbot = "promptopt.cli:main"
+promptopt = "promptopt.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
