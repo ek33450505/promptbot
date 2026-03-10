@@ -11,20 +11,22 @@ from rich.align import Align
 from rich.columns import Columns
 from rich.console import Console, Group
 from rich.panel import Panel
+from rich.text import Text
 
 from promptopt.config import VALID_MODES, load_config
 from promptopt.optimizer import PromptPreferences, optimize_prompt
 
 console = Console()
-STARTUP_WIDTH = 86
-PROMPTBOT_BANNER = r"""
-         .------.
-         | o  o |
-         |  --  |
-         '------'
-          /|__|\
-           /  \
-        promptbot
+STARTUP_MIN_WIDTH = 74
+STARTUP_MAX_WIDTH = 104
+PROMPTBOT_BANNER = """
+              .--------.
+              |  o  o  |
+              |   --   |
+              '--------'
+                /|____|\\
+                 / /  \\ \\
+              promptbot
 """
 
 
@@ -237,19 +239,25 @@ def ask_numbered_choice(
 
 
 def show_startup() -> None:
+    startup_width = _startup_width()
+    hero_text = Text.from_markup(
+        "[bold bright_white]Promptbot[/bold bright_white] "
+        "[bright_blue]|[/bright_blue] "
+        "[bold cyan]The local-first prompt engineering toolkit[/bold cyan]\n\n"
+        "[white]Promptbot bridges the gap between rough ideas and production-ready LLM instructions.[/white]\n"
+        "[white]High-fidelity rewrites, zero latency, and 100% private. No API keys, no telemetry, just better outputs.[/white]"
+    )
     startup_block = Group(
-        Align.center(PROMPTBOT_BANNER.strip("\n"), width=STARTUP_WIDTH),
+        Align.center(Text(PROMPTBOT_BANNER.strip("\n"), style="bright_white"), width=startup_width),
         Panel(
-            "Promptbot converts rough ideas into precise, LLM-ready prompts.\n"
-            "Choose a response style and output format, then enter your request.",
-            border_style="blue",
-            title="Session Setup",
-            width=STARTUP_WIDTH,
+            hero_text,
+            border_style="bright_blue",
+            width=startup_width,
         ),
-        Align.center("[cyan]llm-ready prompt optimization online[/cyan]", width=STARTUP_WIDTH),
+        Align.center("[cyan]local-first prompt engine online[/cyan]", width=startup_width),
         Align.center(
-            "[bold]Promptbot is ready.[/bold] Two quick selections, then your prompt.",
-            width=STARTUP_WIDTH,
+            "[bold]Ready.[/bold] Two quick selections, then your prompt.",
+            width=startup_width,
         ),
     )
     console.print(Align.center(startup_block))
@@ -309,6 +317,10 @@ def _audience_default_index(audience: str) -> int:
     if audience == "advanced":
         return 3
     return 1
+
+
+def _startup_width() -> int:
+    return min(STARTUP_MAX_WIDTH, max(STARTUP_MIN_WIDTH, console.size.width - 6))
 
 
 def copy_to_clipboard(text: str) -> None:

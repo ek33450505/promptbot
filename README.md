@@ -1,72 +1,22 @@
 # promptbot
 
-`promptbot` is a terminal-first prompt optimizer for Claude and other LLMs. It takes rough input, rewrites it into a clearer and more actionable prompt, then lets you review and copy the result locally.
+`promptbot` is a local-first terminal tool that rewrites rough ideas into stronger prompts for Claude and other LLMs.
 
-The product is intentionally simple:
+It stays intentionally simple: choose a style, choose a format, paste a prompt, review the rewrite, then copy it or strengthen it.
 
-1. Launch `promptbot`
-2. Pick a style preset
-3. Pick an output format
-4. Paste a rough prompt
-5. Review the optimized version side-by-side
-6. Copy it, strengthen it, or try again
+## What It Does
 
-`promptbot` does not require an API key and does not send prompts over the network. It rewrites text on your machine so you can paste the result into Claude, Claude Code, or another LLM.
+- rewrites vague or meta-language into direct instructions
+- improves technical and general prompts
+- infers simple audience and format cues
+- supports a stronger second-pass rewrite with `strengthen`
+- keeps everything local with no API keys or telemetry
 
-## Highlights
-
-- Fast terminal workflow with a guided but minimal interface
-- Stronger prompt rewriting for vague, rough, or meta-language input
-- Style presets: `lean`, `balanced`, `expert`
-- Output format presets: paragraph, bullets, step-by-step, JSON, or custom
-- Side-by-side review of the original and optimized prompt
-- Optional advanced tuning via `/advanced`
-- Stronger second-pass rewrite via `strengthen`
-- Local-only operation
-- Project-local template overrides with `.promptopt.json`
-- Compatibility alias: `promptopt`
-
-## What It Improves
-
-`promptbot` does more than reformat text. It now:
-
-- removes filler and meta-prompt phrasing
-- sharpens vague goals into direct instructions
-- infers audience cues when they are obvious
-- adds output-specific guidance for bullets, steps, and JSON
-- raises the quality bar with clearer deliverables and tighter constraints
-
-Example rough input:
-
-```text
-I need a strong prompt for Claude to debug a Python function that crashes when the input list is empty. I want the answer to explain the root cause, show the fix, and include a small test case that proves the fix works.
-```
-
-Example optimized output:
-
-```text
-Objective: Debug a Python function that crashes when the input list is empty.
-Preferred format: step-by-step
-Response style: Clear, technically grounded, and implementation-focused.
-Output instructions: Use numbered steps, isolate the root cause, show the fix, and end with a verification step.
-Quality bar: Resolve ambiguity, use exact technical language, and make the fix immediately actionable.
-Requested output: Explain the root cause, show the fix, and include a small test case that proves the fix works.
-```
-
-## Requirements
-
-- Python 3.13+
-- `pip`
-- Clipboard support if you want copy-to-clipboard:
-  - macOS: `pbcopy`
-  - Linux Wayland: `wl-copy`
-  - Linux X11: `xclip`
-
-## Installation
+## Install
 
 ```bash
-git clone <repo-url> auto-prompt
-cd auto-prompt
+git clone https://github.com/ek33450505/promptbot.git
+cd promptbot
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -79,62 +29,6 @@ This installs:
 
 ## Quick Start
 
-Run the interactive app:
-
-```bash
-promptbot
-```
-
-The startup flow is:
-
-1. `Response style`
-   - `lean`
-   - `balanced`
-   - `expert`
-2. `Output format`
-   - `short paragraph`
-   - `bullet points`
-   - `step-by-step`
-   - `json`
-   - `other`
-3. Prompt entry
-4. Review and action
-
-At prompt entry, paste your request and finish with a blank line.
-
-To open the optional advanced path, enter:
-
-```text
-/advanced
-```
-
-Advanced mode lets you set:
-
-- audience
-- must-include guidance
-- avoid guidance
-
-After optimization, choose one of:
-
-- `copy`
-- `strengthen`
-- `retry`
-- `quit`
-
-## Example Startup
-
-```text
-         .------.
-         | o  o |
-         |  --  |
-         '------'
-          /|__|\
-           /  \
-        promptbot
-```
-
-## Command-Line Usage
-
 Interactive mode:
 
 ```bash
@@ -144,7 +38,7 @@ promptbot
 One-shot mode:
 
 ```bash
-promptbot "Please help me refactor this Python function and add tests"
+promptbot "Debug a Python function that fails on empty input"
 ```
 
 Copy immediately:
@@ -153,61 +47,54 @@ Copy immediately:
 promptbot --copy "Summarize this meeting in 3 bullet points"
 ```
 
-Pipe input:
+## Interactive Flow
 
-```bash
-cat prompt.txt | promptbot
+1. Choose a response style: `lean`, `balanced`, or `expert`
+2. Choose an output format: paragraph, bullets, steps, JSON, or custom
+3. Paste your prompt and end with a blank line
+4. Review the original and optimized prompts side-by-side
+5. Choose `copy`, `strengthen`, `retry`, or `quit`
+
+Enter `/advanced` at prompt entry to set:
+
+- audience
+- must-include guidance
+- avoid guidance
+
+## Example
+
+Input:
+
+```text
+I need a strong prompt for Claude to debug a Python function that crashes when the input list is empty. I want the answer to explain the root cause, show the fix, and include a small test case that proves the fix works.
 ```
 
-Force a mode:
+Output:
 
-```bash
-promptbot --mode code "Review src/app.py for bugs"
-promptbot --mode general "Write a concise thank-you note"
+```text
+Objective: Debug a Python function that crashes when the input list is empty.
+Preferred format: step-by-step
+Response style: Clear, technically grounded, and implementation-focused.
+Output instructions: Use numbered steps, isolate the root cause, show the fix, and end with a verification step.
+Quality bar: Resolve ambiguity, use exact technical language, and make the fix immediately actionable.
+Requested output: Explain the root cause, show the fix, and include a small test case that proves the fix works.
 ```
-
-## Review Flow
-
-Interactive mode shows:
-
-- detected mode: `code` or `general`
-- the original prompt
-- the optimized prompt
-- an optional strengthen pass count when you rerun optimization
-
-`strengthen` keeps the same source prompt and reruns the optimizer with a more aggressive rewrite pass.
 
 ## Configuration
 
-`promptbot` can load an optional `.promptopt.json` file from the current working directory.
-
-Create one from the sample:
+Create a local config file if you want to override templates:
 
 ```bash
 cp .promptopt.json.example .promptopt.json
 ```
 
-Only the current directory is checked. Parent directories are not searched.
-
-Supported config fields:
+Supported fields:
 
 - `default_mode`
 - `templates.code`
 - `templates.general`
 
-Example config:
-
-```json
-{
-  "default_mode": "auto",
-  "templates": {
-    "code": "Objective: $goal\n${persona_block}${audience_block}${format_block}${style_block}${structure_block}${quality_block}${include_block}${avoid_block}${context_block}${constraints_block}${output_block}${reasoning_block}${citation_block}",
-    "general": "Objective: $goal\n${persona_block}${audience_block}${format_block}${style_block}${structure_block}${quality_block}${include_block}${avoid_block}${context_block}${constraints_block}${output_block}${reasoning_block}${citation_block}"
-  }
-}
-```
-
-Available template placeholders:
+Available placeholders:
 
 - `$goal`
 - `${persona_block}`
@@ -239,35 +126,8 @@ Run the module directly:
 python -m promptopt
 ```
 
-## Project Structure
+## Notes
 
-```text
-src/promptopt/cli.py           terminal UX and interactive flow
-src/promptopt/optimizer.py     prompt cleanup, inference, and rewrite logic
-src/promptopt/config.py        config loading and template defaults
-tests/                         unit and CLI coverage
-```
-
-## Troubleshooting
-
-`promptbot: command not found`
-
-```bash
-source .venv/bin/activate
-pip install -e .
-```
-
-Clipboard copy fails:
-
-- verify `pbcopy`, `wl-copy`, or `xclip` is installed
-- rerun without copy if you only want terminal output
-
-Empty prompt error:
-
-- interactive mode needs at least one non-empty line before the blank line that ends input
-
-## Status
-
-Current version: `0.1.0`
-
-`promptbot` is ready for local prompt rewriting, clipboard workflows, and GitHub publication as a focused terminal tool.
+- `promptbot` only rewrites prompts locally
+- clipboard copy uses `pbcopy`, `wl-copy`, or `xclip`
+- the current project-local config file is `.promptopt.json`
