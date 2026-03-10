@@ -11,6 +11,7 @@ from rich.align import Align
 from rich.columns import Columns
 from rich.console import Console, Group
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from promptopt.config import VALID_MODES, load_config
@@ -19,14 +20,12 @@ from promptopt.optimizer import PromptPreferences, optimize_prompt
 console = Console()
 STARTUP_MIN_WIDTH = 74
 STARTUP_MAX_WIDTH = 104
-PROMPTBOT_BANNER = """
-              .--------.
-              |  o  o  |
-              |   --   |
-              '--------'
-                /|____|\\
-                 / /  \\ \\
-              promptbot
+PROMPTBOT_TITLE = r"""
+ ____  ____   ___  __  __ ____ _____ ____   ___ _____
+|  _ \|  _ \ / _ \|  \/  |  _ \_   _| __ ) / _ \_   _|
+| |_) | |_) | | | | |\/| | |_) || | |  _ \| | | || |
+|  __/|  _ <| |_| | |  | |  __/ | | | |_) | |_| || |
+|_|   |_| \_\\___/|_|  |_|_|    |_| |____/ \___/ |_|
 """
 
 
@@ -120,7 +119,6 @@ def run_interactive(requested_mode: str, templates: dict[str, str]) -> None:
                 ("retry", "enter a different prompt"),
                 ("quit", "exit without copying"),
             ],
-            default=1,
         )
 
         if action == "copy":
@@ -150,7 +148,6 @@ def collect_preferences() -> PromptPreferences:
             ("balanced", "clear detail without overexplaining"),
             ("expert", "deeper, sharper, and more rigorous"),
         ],
-        default=2,
     )
     output_format = ask_numbered_choice(
         "Q2. Output format",
@@ -160,7 +157,6 @@ def collect_preferences() -> PromptPreferences:
             ("step-by-step", "ordered instructions"),
             ("json", "structured output"),
         ],
-        default=1,
         allow_other=True,
     )
 
@@ -186,7 +182,6 @@ def collect_advanced_preferences(preferences: PromptPreferences) -> PromptPrefer
             ("beginner", "simpler explanations"),
             ("advanced", "more technical depth"),
         ],
-        default=_audience_default_index(preferences.audience),
         allow_other=True,
     )
     include = console.input("Must include (optional): ").strip()
@@ -204,22 +199,25 @@ def collect_advanced_preferences(preferences: PromptPreferences) -> PromptPrefer
 def ask_numbered_choice(
     label: str,
     options: list[tuple[str, str]],
-    default: int = 1,
     allow_other: bool = False,
 ) -> str:
-    console.print(f"\n[bold]{label}[/bold]")
+    console.print(f"\n[bold bright_white]{label}[/bold bright_white]")
     for index, (value, description) in enumerate(options, start=1):
-        console.print(f"  {index}. {value}  [dim]- {description}[/dim]")
+        console.print(
+            f"  [bold bright_green]{index}.[/bold bright_green] "
+            f"[bold white]{value}[/bold white]  [dim]- {description}[/dim]"
+        )
 
     other_index = len(options) + 1
     if allow_other:
-        console.print(f"  {other_index}. other  [dim]- type your own[/dim]")
+        console.print(
+            f"  [bold bright_green]{other_index}.[/bold bright_green] "
+            "[bold white]other[/bold white]  [dim]- type your own[/dim]"
+        )
 
     while True:
-        raw_choice = console.input(f"Select [{default}]: ").strip()
-        if not raw_choice:
-            choice = default
-        elif raw_choice.isdigit():
+        raw_choice = console.input("[bold bright_green]Select:[/bold bright_green] ").strip()
+        if raw_choice.isdigit():
             choice = int(raw_choice)
         else:
             console.print("[yellow]Enter a number from the list.[/yellow]")
@@ -229,7 +227,7 @@ def ask_numbered_choice(
             return options[choice - 1][0]
 
         if allow_other and choice == other_index:
-            custom_value = console.input("Enter custom value: ").strip()
+            custom_value = console.input("[bold bright_green]Custom value:[/bold bright_green] ").strip()
             if custom_value:
                 return custom_value
             console.print("[yellow]Custom value cannot be empty.[/yellow]")
@@ -248,7 +246,7 @@ def show_startup() -> None:
         "[white]High-fidelity rewrites, zero latency, and 100% private. No API keys, no telemetry, just better outputs.[/white]"
     )
     startup_block = Group(
-        Align.center(Text(PROMPTBOT_BANNER.strip("\n"), style="bright_white"), width=startup_width),
+        Align.center(Text(PROMPTBOT_TITLE.strip("\n"), style="bright_white"), width=startup_width),
         Panel(
             hero_text,
             border_style="bright_blue",
@@ -295,15 +293,38 @@ def render_result(
     resolved_mode: str,
     boost_level: int = 0,
 ) -> None:
-    console.rule("[bold]Optimized Prompt[/bold]")
-    console.print(f"[bold]Mode:[/bold] {resolved_mode}")
+    console.rule("[bold bright_green]Optimized Prompt[/bold bright_green]")
+    console.print(
+        Text.assemble(
+            ("MODE", "bold bright_green"),
+            (": ", "bold bright_green"),
+            (resolved_mode, "bold white"),
+        )
+    )
     if boost_level > 0:
-        console.print(f"[bold]Strength Pass:[/bold] {boost_level}")
+        console.print(
+            Text.assemble(
+                ("STRENGTH PASS", "bold bright_green"),
+                (": ", "bold bright_green"),
+                (str(boost_level), "bold white"),
+            )
+        )
     console.print(
         Columns(
             [
-                Panel(source_prompt, title="Original Prompt", expand=True),
-                Panel(optimized_prompt, title="Prompt to Copy", expand=True),
+                Panel(
+                    source_prompt,
+                    title="[bold bright_white]Original Prompt[/bold bright_white]",
+                    border_style="bright_blue",
+                    expand=True,
+                ),
+                Panel(
+                    _build_prompt_copy_renderable(optimized_prompt),
+                    title="[bold bright_green]Prompt to Copy[/bold bright_green]",
+                    border_style="bright_green",
+                    padding=(1, 2),
+                    expand=True,
+                ),
             ],
             expand=True,
             equal=True,
@@ -311,16 +332,32 @@ def render_result(
     )
 
 
-def _audience_default_index(audience: str) -> int:
-    if audience == "beginner":
-        return 2
-    if audience == "advanced":
-        return 3
-    return 1
-
-
 def _startup_width() -> int:
     return min(STARTUP_MAX_WIDTH, max(STARTUP_MIN_WIDTH, console.size.width - 6))
+
+
+def _build_prompt_copy_renderable(optimized_prompt: str) -> Table:
+    table = Table.grid(padding=(0, 1), expand=True)
+    table.add_column(style="bold bright_green", no_wrap=True, width=22)
+    table.add_column(style="white", ratio=1)
+
+    for line in optimized_prompt.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            table.add_row("", "")
+            continue
+
+        if ":" in stripped:
+            label, value = stripped.split(":", 1)
+            table.add_row(
+                Text(f"{label.upper()}:", style="bold bright_green"),
+                Text(value.strip(), style="white"),
+            )
+            continue
+
+        table.add_row("", Text(stripped, style="white"))
+
+    return table
 
 
 def copy_to_clipboard(text: str) -> None:

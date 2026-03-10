@@ -72,6 +72,7 @@ COMMON_TYPO_REPLACEMENTS = (
 COMMON_PHRASE_REPLACEMENTS = (
     (r"\bat random\b", "intermittently"),
     (r"\bafter we deploy\b", "after deployment"),
+    (r"\bwhen the input list is empty\b", "on empty-list input"),
     (r"\bpossible root cause\b", "likely root causes"),
     (r"\blook at\b", "Analyze"),
     (r"\btell me what to check first\b", "prioritize the first diagnostic checks"),
@@ -81,6 +82,10 @@ COMMON_PHRASE_REPLACEMENTS = (
     (r"\bnot full of fluff\b", "without filler"),
     (r"\binfra\b", "infrastructure"),
     (r"\bnot code\b", "rather than application code"),
+)
+NON_GOAL_PATTERN = re.compile(
+    r"^(?:nice work(?: dude)?|good job|great job|looks good|awesome|thanks|thank you|nice one)[!. ]*$",
+    re.IGNORECASE,
 )
 
 
@@ -201,6 +206,7 @@ def _extract_sections(
     audience = _infer_audience(normalized, preferences.audience)
     output_format = _infer_output_format(normalized, preferences.output_format)
     lines = [line for line in (_polish_extracted_line(line) for line in _normalize_for_extraction(normalized)) if line]
+    lines = _drop_non_goal_openers(lines)
     goal = lines[0] if lines else "Help with the request below."
     remainder = lines[1:]
 
@@ -277,6 +283,7 @@ def _single_line_block(label: str, value: str) -> str:
 
 def _trim_filler(line: str) -> str:
     substitutions = (
+        (r"^>\s*", ""),
         (r"^(?:please\s+)+", ""),
         (r"^(?:can|could|would)\s+you\s+", ""),
         (r"^i\s+(?:would\s+like|want|need)\s+you\s+to\s+", ""),
@@ -322,7 +329,7 @@ def _refine_goal(goal: str, mode: str, boost_level: int = 0) -> str:
         ("create ", "Create "),
         ("tell me about ", "Provide a concise overview of "),
         ("fix ", "Diagnose and fix "),
-        ("debug ", "Debug "),
+        ("debug ", "Diagnose and fix "),
         ("improve ", "Improve "),
         ("review ", "Review "),
         ("find out why ", "Determine why "),
@@ -487,3 +494,9 @@ def _polish_plain_language(text: str) -> str:
     for pattern, replacement in COMMON_PHRASE_REPLACEMENTS:
         polished = re.sub(pattern, replacement, polished, flags=re.IGNORECASE)
     return polished
+
+
+def _drop_non_goal_openers(lines: list[str]) -> list[str]:
+    if len(lines) > 1 and NON_GOAL_PATTERN.match(lines[0].strip()):
+        return lines[1:]
+    return lines

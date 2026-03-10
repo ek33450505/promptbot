@@ -91,7 +91,7 @@ class OptimizePromptTests(unittest.TestCase):
             "code",
             DEFAULT_TEMPLATES,
         )
-        self.assertIn("Objective: Debug a Python function that crashes when the input list is empty.", result.optimized_prompt)
+        self.assertIn("Objective: Diagnose and fix a Python function that crashes on empty-list input.", result.optimized_prompt)
         self.assertIn("Requested output:", result.optimized_prompt)
         self.assertIn("Explain the root cause", result.optimized_prompt)
         self.assertNotIn("I want the answer to", result.optimized_prompt)
@@ -137,6 +137,7 @@ class OptimizePromptTests(unittest.TestCase):
             DEFAULT_TEMPLATES,
             preferences=PromptPreferences(output_format="step-by-step"),
         )
+        self.assertIn("Objective: Diagnose and fix a Python function that crashes on empty-list input.", result.optimized_prompt)
         self.assertIn("Output instructions: Use numbered steps, isolate the root cause, show the fix, and end with a verification step.", result.optimized_prompt)
 
     def test_strengthen_pass_upgrades_goal_tone(self) -> None:
@@ -148,6 +149,15 @@ class OptimizePromptTests(unittest.TestCase):
         )
         self.assertIn("Objective: Deliver a precise explanation of photosynthesis.", result.optimized_prompt)
         self.assertIn("Push specificity further", result.optimized_prompt)
+
+    def test_ignores_conversational_praise_before_real_request(self) -> None:
+        result = optimize_prompt(
+            "Nice work dude! One last request before we push. Remove the suggested option from the selection prompt.",
+            "general",
+            DEFAULT_TEMPLATES,
+        )
+        self.assertNotIn("Nice work dude", result.optimized_prompt)
+        self.assertIn("Remove the suggested option", result.optimized_prompt)
 
     def test_coding_prompt_example_gets_cleaner_goal_and_fixed_spelling(self) -> None:
         result = optimize_prompt(
@@ -162,6 +172,16 @@ class OptimizePromptTests(unittest.TestCase):
         self.assertNotIn("figgure", result.optimized_prompt)
         self.assertNotIn("enginering", result.optimized_prompt)
         self.assertNotIn("tommorow", result.optimized_prompt)
+
+    def test_strips_blockquote_prefix_from_coding_objective(self) -> None:
+        result = optimize_prompt(
+            "> I need a strong prompt for Claude to debug a Python function that crashes when the input list is empty.",
+            "code",
+            DEFAULT_TEMPLATES,
+            preferences=PromptPreferences(boost_level=1),
+        )
+        self.assertIn("Objective: Diagnose and fix a Python function that crashes on empty-list input.", result.optimized_prompt)
+        self.assertNotIn("> I need", result.optimized_prompt)
 
 
 if __name__ == "__main__":

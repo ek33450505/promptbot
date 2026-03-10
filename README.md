@@ -1,3 +1,11 @@
+```text
+ ____  ____   ___  __  __ ____ _____ ____   ___ _____
+|  _ \|  _ \ / _ \|  \/  |  _ \_   _| __ ) / _ \_   _|
+| |_) | |_) | | | | |\/| | |_) || | |  _ \| | | || |
+|  __/|  _ <| |_| | |  | |  __/ | | | |_) | |_| || |
+|_|   |_| \_\\___/|_|  |_|_|    |_| |____/ \___/ |_|
+```
+
 # promptbot
 
 `promptbot` is a local-first terminal tool that rewrites rough ideas into stronger prompts for Claude and other LLMs.
@@ -10,6 +18,7 @@ It stays intentionally simple: choose a style, choose a format, paste a prompt, 
 - improves technical and general prompts
 - infers simple audience and format cues
 - supports a stronger second-pass rewrite with `strengthen`
+- renders the optimized prompt as a structured, terminal-friendly output block
 - keeps everything local with no API keys or telemetry
 
 ## Install
@@ -51,9 +60,10 @@ promptbot --copy "Summarize this meeting in 3 bullet points"
 
 1. Choose a response style: `lean`, `balanced`, or `expert`
 2. Choose an output format: paragraph, bullets, steps, JSON, or custom
-3. Paste your prompt and end with a blank line
-4. Review the original and optimized prompts side-by-side
+3. Make an explicit numbered selection for each prompt
+4. Paste your prompt and end with a blank line
 5. Choose `copy`, `strengthen`, `retry`, or `quit`
+6. Review the original and optimized prompts side-by-side with structured labels in the copy panel
 
 Enter `/advanced` at prompt entry to set:
 
@@ -72,7 +82,7 @@ I need a strong prompt for Claude to debug a Python function that crashes when t
 Output:
 
 ```text
-Objective: Debug a Python function that crashes when the input list is empty.
+Objective: Diagnose and fix a Python function that crashes on empty-list input.
 Preferred format: step-by-step
 Response style: Clear, technically grounded, and implementation-focused.
 Output instructions: Use numbered steps, isolate the root cause, show the fix, and end with a verification step.
@@ -131,3 +141,4 @@ python -m promptopt
 - `promptbot` only rewrites prompts locally
 - clipboard copy uses `pbcopy`, `wl-copy`, or `xclip`
 - the current project-local config file is `.promptopt.json`
+- interactive selections no longer show suggested default values

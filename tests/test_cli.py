@@ -41,6 +41,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Prompt to Copy", result.output)
         self.assertIn("Original Prompt", result.output)
+        self.assertIn("OBJECTIVE:", result.output)
 
     @patch("promptopt.cli.copy_to_clipboard")
     def test_one_shot_copy_copies_prompt(self, mock_copy) -> None:
@@ -64,7 +65,7 @@ class CliTests(unittest.TestCase):
     ) -> None:
         result = self.runner.invoke(main, [])
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("promptbot", result.output)
+        self.assertIn("Promptbot |", result.output)
         self.assertIn("The local-first prompt engineering toolkit", result.output)
         self.assertIn("production-ready LLM", result.output)
         self.assertIn("just better outputs", result.output)
@@ -136,7 +137,7 @@ class CliTests(unittest.TestCase):
         second_preferences = mock_optimize.call_args_list[1].kwargs["preferences"]
         self.assertEqual(first_preferences.boost_level, 0)
         self.assertEqual(second_preferences.boost_level, 1)
-        self.assertIn("Strength Pass: 1", result.output)
+        self.assertIn("STRENGTH PASS: 1", result.output)
 
     @patch("promptopt.cli.ask_numbered_choice", return_value="quit")
     @patch("promptopt.cli.collect_interactive_prompt", side_effect=["/advanced", "Please summarize this project."])
@@ -168,6 +169,18 @@ class CliTests(unittest.TestCase):
             allow_other=True,
         )
         self.assertEqual(value, "expert")
+
+    @patch("promptopt.cli.console.input", side_effect=["", "2"])
+    def test_numbered_choice_requires_explicit_selection(self, _mock_input) -> None:
+        value = ask_numbered_choice(
+            "Style",
+            [
+                ("lean", "tight"),
+                ("balanced", "clear"),
+                ("expert", "deep"),
+            ],
+        )
+        self.assertEqual(value, "balanced")
 
 
 if __name__ == "__main__":
