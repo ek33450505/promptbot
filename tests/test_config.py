@@ -22,23 +22,6 @@ class ConfigTests(unittest.TestCase):
 
             self.assertIsNone(locate_config(nested))
 
-    def test_load_config_merges_templates(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            (root / ".promptopt.json").write_text(
-                json.dumps(
-                    {
-                        "default_mode": "code",
-                        "templates": {"general": "${persona_block}Task: $goal\n${length_block}"},
-                    }
-                ),
-                encoding="utf-8",
-            )
-            config = load_config(root)
-            self.assertEqual(config.default_mode, "code")
-            self.assertIn("$goal", config.templates["general"])
-            self.assertIn("${instructions_block}", config.templates["code"])
-
     def test_invalid_mode_raises(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -48,6 +31,21 @@ class ConfigTests(unittest.TestCase):
             )
             with self.assertRaises(ValueError):
                 load_config(root)
+
+    def test_default_mode_loaded_from_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / ".promptopt.json").write_text(
+                json.dumps({"default_mode": "code"}),
+                encoding="utf-8",
+            )
+            config = load_config(root)
+            self.assertEqual(config.default_mode, "code")
+
+    def test_default_mode_is_auto_when_no_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = load_config(Path(temp_dir))
+            self.assertEqual(config.default_mode, "auto")
 
 
 if __name__ == "__main__":

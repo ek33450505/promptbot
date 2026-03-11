@@ -6,27 +6,6 @@ from pathlib import Path
 
 VALID_MODES = {"auto", "code", "general"}
 
-DEFAULT_TEMPLATES = {
-    "code": (
-        "${role_block}"
-        "<task>\n"
-        "$goal\n"
-        "</task>\n"
-        "${audience_xml_block}"
-        "${context_xml_block}"
-        "${instructions_block}"
-    ),
-    "general": (
-        "${role_block}"
-        "<task>\n"
-        "$goal\n"
-        "</task>\n"
-        "${audience_xml_block}"
-        "${context_xml_block}"
-        "${instructions_block}"
-    ),
-}
-
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -34,7 +13,6 @@ class AppConfig:
     default_model: str | None
     default_mode: str
     default_claude_args: tuple[str, ...]
-    templates: dict[str, str]
     config_path: Path | None = None
 
 
@@ -60,23 +38,10 @@ def load_config(start_dir: Path | None = None) -> AppConfig:
     if default_mode not in VALID_MODES:
         raise ValueError("`default_mode` must be one of auto, code, or general.")
 
-    templates = dict(DEFAULT_TEMPLATES)
-    template_overrides = raw_data.get("templates", {})
-    if template_overrides:
-        if not isinstance(template_overrides, dict):
-            raise ValueError("`templates` must be an object.")
-        for mode, template in template_overrides.items():
-            if mode not in {"code", "general"}:
-                raise ValueError("`templates` only supports `code` and `general`.")
-            if not isinstance(template, str) or not template.strip():
-                raise ValueError(f"`templates.{mode}` must be a non-empty string.")
-            templates[mode] = template
-
     return AppConfig(
         claude_command="claude",
         default_model=None,
         default_mode=default_mode,
         default_claude_args=(),
-        templates=templates,
         config_path=config_path,
     )
