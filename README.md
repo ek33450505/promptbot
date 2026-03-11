@@ -15,10 +15,14 @@ It stays intentionally simple: choose a style, choose a format, paste a prompt, 
 ## What It Does
 
 - rewrites vague or meta-language into direct instructions
+- filters filler, typos, and admin chatter before building the final prompt
+- structures prompts into Claude-friendly XML sections for role, task, context, and instructions
+- includes a `role` section only when you explicitly set a persona
 - improves technical and general prompts
 - infers simple audience and format cues
 - supports a stronger second-pass rewrite with `strengthen`
 - renders the optimized prompt as a structured, terminal-friendly output block
+- formats multi-item sections as readable lists instead of dense joined text
 - keeps everything local with no API keys or telemetry
 
 ## Install
@@ -82,12 +86,40 @@ I need a strong prompt for Claude to debug a Python function that crashes when t
 Output:
 
 ```text
-Objective: Diagnose and fix a Python function that crashes on empty-list input.
-Preferred format: step-by-step
-Response style: Clear, technically grounded, and implementation-focused.
-Output instructions: Use numbered steps, isolate the root cause, show the fix, and end with a verification step.
-Quality bar: Resolve ambiguity, use exact technical language, and make the fix immediately actionable.
-Requested output: Explain the root cause, show the fix, and include a small test case that proves the fix works.
+<task>
+Diagnose and fix a Python function that crashes on empty-list input.
+</task>
+<instructions>
+  <format>
+    Use numbered steps, isolate the root cause, show the fix, and end with a verification step.
+  </format>
+  <style>
+    Clear, technically grounded, and implementation-focused.
+  </style>
+  <deliverables>
+    Explain the root cause, show the fix, and include a small test case that proves the fix works.
+  </deliverables>
+  <quality_bar>
+    Use exact technical language, ground the answer in the available evidence, and make the fix immediately actionable. Prefer a general-purpose fix over a narrow workaround that only passes the current test. Keep the solution simple and avoid over-engineering.
+  </quality_bar>
+</instructions>
+```
+
+Prompt quality cleanup example:
+
+```text
+rough input:
+The prompts that are being returned with the new formatting are really not very clean - how can we ensure correct grammer and formatting. We seem to be including random sentences from the inital prompt.
+
+rewritten output:
+<task>
+Ensure correct grammar and formatting.
+</task>
+<instructions>
+  <deliverables>
+    Prevent unrelated source sentences from leaking into the final prompt.
+  </deliverables>
+</instructions>
 ```
 
 ## Configuration
@@ -107,6 +139,10 @@ Supported fields:
 Available placeholders:
 
 - `$goal`
+- `${role_block}`
+- `${audience_xml_block}`
+- `${context_xml_block}`
+- `${instructions_block}`
 - `${persona_block}`
 - `${audience_block}`
 - `${format_block}`

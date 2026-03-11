@@ -1,7 +1,7 @@
 {
   "default_mode": "auto",
   "templates": {
-    "code": "Objective: $goal\n${persona_block}${audience_block}${format_block}${style_block}${structure_block}${quality_block}${include_block}${avoid_block}${context_block}${constraints_block}${output_block}${reasoning_block}${citation_block}",
-    "general": "Objective: $goal\n${persona_block}${audience_block}${format_block}${style_block}${structure_block}${quality_block}${include_block}${avoid_block}${context_block}${constraints_block}${output_block}${reasoning_block}${citation_block}"
+    "code": "${role_block}<task>\n$goal\n</task>\n${audience_xml_block}${context_xml_block}${instructions_block}",
+    "general": "${role_block}<task>\n$goal\n</task>\n${audience_xml_block}${context_xml_block}${instructions_block}"
   }
 }

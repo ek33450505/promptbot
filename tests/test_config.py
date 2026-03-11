@@ -37,7 +37,7 @@ class ConfigTests(unittest.TestCase):
             config = load_config(root)
             self.assertEqual(config.default_mode, "code")
             self.assertIn("$goal", config.templates["general"])
-            self.assertIn("${style_block}", config.templates["code"])
+            self.assertIn("${instructions_block}", config.templates["code"])
 
     def test_invalid_mode_raises(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import re
 import shutil
 import subprocess
 import sys
@@ -337,27 +338,92 @@ def _startup_width() -> int:
 
 
 def _build_prompt_copy_renderable(optimized_prompt: str) -> Table:
-    table = Table.grid(padding=(0, 1), expand=True)
-    table.add_column(style="bold bright_green", no_wrap=True, width=22)
-    table.add_column(style="white", ratio=1)
+    rows = _extract_render_rows(optimized_prompt)
+    label_width = 16
+    labels = [label for label, _value in rows if label]
+    if labels:
+        label_width = max(12, min(16, max(len(label) for label in labels)))
+
+    table = Table.grid(padding=(0, 2), expand=True)
+    table.add_column(style="bold bright_green", no_wrap=True, width=label_width, vertical="top")
+    table.add_column(style="white", ratio=1, vertical="top")
+
+    for label, value in rows:
+        table.add_row(
+            Text(label, style="bold bright_green"),
+            Text(value, style="white"),
+        )
+
+    return table
+
+
+def _extract_render_rows(optimized_prompt: str) -> list[tuple[str, str]]:
+    xml_rows = _extract_xml_rows(optimized_prompt)
+    if xml_rows:
+        return xml_rows
+
+    rows: list[tuple[str, str]] = []
+    pending_label = ""
+    pending_value: list[str] = []
+
+    def flush() -> None:
+        nonlocal pending_label, pending_value
+        if pending_label or pending_value:
+            rows.append((pending_label, "\n".join(pending_value).strip()))
+        pending_label = ""
+        pending_value = []
 
     for line in optimized_prompt.splitlines():
         stripped = line.strip()
         if not stripped:
-            table.add_row("", "")
+            flush()
             continue
 
         if ":" in stripped:
+            flush()
             label, value = stripped.split(":", 1)
-            table.add_row(
-                Text(f"{label.upper()}:", style="bold bright_green"),
-                Text(value.strip(), style="white"),
-            )
+            pending_label = label.upper()
+            pending_value = [value.strip()] if value.strip() else []
             continue
 
-        table.add_row("", Text(stripped, style="white"))
+        pending_value.append(stripped)
 
-    return table
+    flush()
+    return rows
+
+
+def _extract_xml_rows(optimized_prompt: str) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    stack: list[str] = []
+    buffers: list[list[str]] = []
+
+    for raw_line in optimized_prompt.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+
+        open_match = re.fullmatch(r"<([a-z_]+)>", stripped)
+        if open_match:
+            stack.append(open_match.group(1))
+            buffers.append([])
+            continue
+
+        close_match = re.fullmatch(r"</([a-z_]+)>", stripped)
+        if close_match:
+            if not stack:
+                continue
+            tag = stack.pop()
+            content = buffers.pop()
+            if tag != close_match.group(1):
+                continue
+            if tag != "instructions" and content:
+                rows.append((tag.replace("_", " ").upper(), "\n".join(content)))
+            continue
+
+        if stack and stack[-1] != "instructions":
+            buffers[-1].append(stripped)
+
+    return rows
 
 
 def copy_to_clipboard(text: str) -> None:

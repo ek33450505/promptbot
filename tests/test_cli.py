@@ -41,7 +41,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("Prompt to Copy", result.output)
         self.assertIn("Original Prompt", result.output)
-        self.assertIn("OBJECTIVE:", result.output)
+        self.assertIn("TASK", result.output)
+        self.assertNotIn("ROLE", result.output)
 
     @patch("promptopt.cli.copy_to_clipboard")
     def test_one_shot_copy_copies_prompt(self, mock_copy) -> None:

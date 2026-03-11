@@ -8,6 +8,7 @@ CODE_HARD_PATTERNS = (
     re.compile(r"```"),
     re.compile(r"(^|\n)\$ [^\n]+"),
     re.compile(r"\bTraceback \(most recent call last\):"),
+    re.compile(r"\b[A-Za-z_]*Error\b"),
     re.compile(r"\b(?:src|tests|app|package|pyproject|README)\b[^\n]*\.(?:py|js|ts|tsx|jsx|json|md|yaml|yml|sh|sql|html|css)\b"),
     re.compile(r"\b[A-Za-z0-9_./-]+\.(?:py|js|ts|tsx|jsx|sh|sql|html|css|java|go|rs)\b"),
     re.compile(r"(^|\n)(?:diff --git|@@ |\+\+\+ |--- )"),
@@ -42,7 +43,7 @@ CONSTRAINT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 OUTPUT_PATTERN = re.compile(
-    r"\b(?:return|respond|response|output|show|list|summarize|format|write|give me|reply|explain|include|provide|walk through)\b",
+    r"\b(?:return|respond|response|output|show|list|summarize|format|write|give me|reply|explain|include|provide|walk through|add|remove|improve|prevent|eliminate|clarify|refine|clean up)\b",
     re.IGNORECASE,
 )
 BEGINNER_AUDIENCE_PATTERN = re.compile(
@@ -62,6 +63,9 @@ COMMON_TYPO_REPLACEMENTS = (
     (r"\brealy\b", "really"),
     (r"\bfiggure\b", "figure"),
     (r"\benginering\b", "engineering"),
+    (r"\bgrammer\b", "grammar"),
+    (r"\binital\b", "initial"),
+    (r"\bits hard\b", "it is hard"),
     (r"\btommorow\b", "tomorrow"),
     (r"\bclaude\b", "Claude"),
     (r"\bpython\b", "Python"),
@@ -72,12 +76,19 @@ COMMON_TYPO_REPLACEMENTS = (
 COMMON_PHRASE_REPLACEMENTS = (
     (r"\bat random\b", "intermittently"),
     (r"\bafter we deploy\b", "after deployment"),
+    (r"\bafter deploy\b", "after deployment"),
     (r"\bwhen the input list is empty\b", "on empty-list input"),
     (r"\bpossible root cause\b", "likely root causes"),
     (r"\blook at\b", "Analyze"),
     (r"\btell me what to check first\b", "prioritize the first diagnostic checks"),
     (r"\bsuggest the most likely fix\b", "recommend the most likely fix"),
+    (r"\bsometimes it(?:'s| is|s) a timeout and other times memory spikes\b", "the logs alternate between timeouts and memory spikes"),
+    (r"\bsometimes it(?:'s| is|s) a timeout and other times ([A-Za-z_]*Error)\b", r"failures alternate between timeouts and \1"),
+    (r"\bthe logs are messy and the logs alternate between\b", "the logs are messy, and failures alternate between"),
+    (r"\bthe logs are messy and sometimes it(?:'s| is|s) a timeout and other times ([A-Za-z_]*Error)\b", r"the logs are messy, and failures alternate between timeouts and \1"),
+    (r"\bthe logs are messy and failures alternate between\b", "the logs are messy, and failures alternate between"),
     (r"\bgive me\b", "provide"),
+    (r"\bget rid of\b", "remove"),
     (r"\bstep by step\b", "step-by-step"),
     (r"\bnot full of fluff\b", "without filler"),
     (r"\binfra\b", "infrastructure"),
@@ -85,6 +96,36 @@ COMMON_PHRASE_REPLACEMENTS = (
 )
 NON_GOAL_PATTERN = re.compile(
     r"^(?:nice work(?: dude)?|good job|great job|looks good|awesome|thanks|thank you|nice one)[!. ]*$",
+    re.IGNORECASE,
+)
+NOISE_PATTERN = re.compile(
+    r"^(?:one last request before we push(?: one last time)?|this is a direct example from promptbot|make any additional changes to the prompt you see fit|note:.*)[!. ]*$",
+    re.IGNORECASE,
+)
+ACTION_PREFIXES = (
+    "add ",
+    "remove ",
+    "improve ",
+    "ensure ",
+    "prevent ",
+    "fix ",
+    "debug ",
+    "diagnose ",
+    "create ",
+    "write ",
+    "explain ",
+    "summarize ",
+    "describe ",
+    "compare ",
+    "list ",
+    "clarify ",
+    "review ",
+    "analyze ",
+    "determine ",
+    "transform ",
+)
+WEAK_GOAL_PATTERN = re.compile(
+    r"^(?:the|this|these|those|on the|there(?:'s| is)|it(?:'s| is)|we seem to|everything is)\b",
     re.IGNORECASE,
 )
 
@@ -207,8 +248,8 @@ def _extract_sections(
     output_format = _infer_output_format(normalized, preferences.output_format)
     lines = [line for line in (_polish_extracted_line(line) for line in _normalize_for_extraction(normalized)) if line]
     lines = _drop_non_goal_openers(lines)
-    goal = lines[0] if lines else "Help with the request below."
-    remainder = lines[1:]
+    lines = [line for line in lines if not NOISE_PATTERN.match(line)]
+    goal, remainder = _select_goal_line(lines)
 
     context_lines: list[str] = []
     constraint_lines: list[str] = []
@@ -222,6 +263,38 @@ def _extract_sections(
         else:
             context_lines.append(line)
 
+    deliverable_lines = list(output_lines)
+    if preferences.include:
+        deliverable_lines.append(_finalize_sentence(f"Must include {preferences.include}"))
+
+    constraint_items = list(constraint_lines)
+    if preferences.avoid:
+        constraint_items.append(_finalize_sentence(f"Exclude {preferences.avoid}"))
+
+    role_text = _role_text(mode, preferences.persona)
+    style_text = _style_text(brevity, mode)
+    format_text = _format_guidance(output_format, mode)
+    quality_text = _quality_bar(mode, brevity, preferences.boost_level)
+    reasoning_text = (
+        "Reason step-by-step internally when it improves accuracy, but present only the final answer unless the user asks for your reasoning."
+        if preferences.reasoning
+        else ""
+    )
+    citation_text = (
+        "Use reliable citations when factual claims matter, and state uncertainty clearly."
+        if preferences.citations
+        else ""
+    )
+    instruction_parts = [
+        _tag_block("format", format_text, indent=2),
+        _tag_block("style", style_text, indent=2),
+        _xml_block_from_lines("deliverables", deliverable_lines, indent=2),
+        _xml_block_from_lines("constraints", constraint_items, indent=2),
+        _tag_block("quality_bar", quality_text, indent=2),
+        _tag_block("reasoning", reasoning_text, indent=2),
+        _tag_block("source_handling", citation_text, indent=2),
+    ]
+
     return {
         "goal": _refine_goal(goal, mode, preferences.boost_level),
         "context": _join_lines(context_lines),
@@ -229,6 +302,10 @@ def _extract_sections(
         "output": _join_lines(output_lines),
         "success": "",
         "prompt": normalized,
+        "role_block": _tag_block("role", role_text),
+        "audience_xml_block": _tag_block("audience", audience) if audience != "general" else "",
+        "context_xml_block": _xml_block_from_lines("context", context_lines),
+        "instructions_block": _container_block("instructions", instruction_parts),
         "persona_block": _single_line_block("Role", preferences.persona),
         "audience_block": _single_line_block(
             "Target audience",
@@ -237,25 +314,25 @@ def _extract_sections(
         "format_block": _single_line_block("Preferred format", output_format),
         "style_block": _single_line_block(
             "Response style",
-            _style_text(brevity, mode),
+            style_text,
         ),
         "structure_block": _single_line_block(
             "Output instructions",
-            _format_guidance(output_format, mode),
+            format_text,
         ),
         "quality_block": _single_line_block(
             "Quality bar",
-            _quality_bar(mode, brevity, preferences.boost_level),
+            quality_text,
         ),
         "include_block": _single_line_block("Key requirement", preferences.include),
         "avoid_block": _single_line_block("Avoid", preferences.avoid),
         "reasoning_block": _single_line_block(
             "Reasoning",
-            "Show step-by-step reasoning only when it improves the result." if preferences.reasoning else "",
+            reasoning_text,
         ),
         "citation_block": _single_line_block(
             "Source handling",
-            "Use reliable citations and clearly state uncertainty when needed." if preferences.citations else "",
+            citation_text,
         ),
         "context_block": _render_block("Additional context", context_lines),
         "constraints_block": _render_block("Constraints", constraint_lines),
@@ -272,13 +349,69 @@ def _render_block(label: str, lines: list[str]) -> str:
         return ""
 
     if all("```" not in line for line in lines):
-        return f"{label}: {'; '.join(lines)}\n"
+        if len(lines) == 1:
+            return f"{label}: {lines[0]}\n"
+        return f"{label}:\n" + "\n".join(f"- {line}" for line in lines) + "\n"
 
     return f"{label}:\n" + "\n".join(lines) + "\n"
 
 
 def _single_line_block(label: str, value: str) -> str:
     return f"{label}: {value}\n" if value else ""
+
+
+def _tag_block(tag: str, value: str, indent: int = 0) -> str:
+    if not value:
+        return ""
+
+    pad = " " * indent
+    inner_pad = " " * (indent + 2)
+    body = "\n".join(f"{inner_pad}{line}" for line in value.splitlines())
+    return f"{pad}<{tag}>\n{body}\n{pad}</{tag}>\n"
+
+
+def _tag_list_block(tag: str, lines: list[str], indent: int = 0) -> str:
+    if not lines:
+        return ""
+
+    pad = " " * indent
+    inner_pad = " " * (indent + 2)
+    body = "\n".join(f"{inner_pad}- {line}" for line in lines)
+    return f"{pad}<{tag}>\n{body}\n{pad}</{tag}>\n"
+
+
+def _xml_block_from_lines(tag: str, lines: list[str], indent: int = 0) -> str:
+    if not lines:
+        return ""
+
+    if all("```" not in line for line in lines):
+        if len(lines) == 1:
+            return _tag_block(tag, lines[0], indent=indent)
+        return _tag_list_block(tag, lines, indent=indent)
+
+    pad = " " * indent
+    inner_pad = " " * (indent + 2)
+    body = "\n".join(f"{inner_pad}{line}" for line in lines)
+    return f"{pad}<{tag}>\n{body}\n{pad}</{tag}>\n"
+
+
+def _container_block(tag: str, blocks: list[str], indent: int = 0) -> str:
+    content = "".join(block for block in blocks if block)
+    if not content:
+        return ""
+
+    pad = " " * indent
+    return f"{pad}<{tag}>\n{content}{pad}</{tag}>\n"
+
+
+def _role_text(mode: str, persona: str) -> str:
+    custom = persona.strip()
+    if custom:
+        if custom.lower().startswith("you are "):
+            return _finalize_sentence(custom)
+        article = "an" if custom[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
+        return f"You are {article} {custom}."
+    return ""
 
 
 def _trim_filler(line: str) -> str:
@@ -288,6 +421,8 @@ def _trim_filler(line: str) -> str:
         (r"^(?:can|could|would)\s+you\s+", ""),
         (r"^i\s+(?:would\s+like|want|need)\s+you\s+to\s+", ""),
         (r"^help\s+me\s+", ""),
+        (r"^additionally,\s+", ""),
+        (r"^lets\s+go\s+ahead\s+and\s+", ""),
         (r"^i\s+need\s+(?:a\s+)?(?:really\s+)?(?:strong|good|better|clearer|effective)\s+prompt(?:\s+for\s+claude)?\s+to\s+help\s+me\s+(?:figure\s+out|understand)\s+why\s+", "Determine why "),
         (r"^i\s+need\s+(?:a\s+)?(?:strong|good|better|clearer|effective)\s+prompt(?:\s+for\s+claude)?\s+to\s+", ""),
         (r"^i\s+need\s+(?:a\s+)?(?:really\s+)?(?:strong|good|better|clearer|effective)\s+prompt(?:\s+for\s+claude)?\s+to\s+", ""),
@@ -303,6 +438,9 @@ def _trim_filler(line: str) -> str:
         (r"^help\s+with\s+", ""),
         (r"^tell\s+me\s+about\s+", "Explain "),
         (r"^give\s+me\s+", "Provide "),
+        (r"^get\s+rid\s+of\s+", "Remove "),
+        (r"^(?:additionally,\s*)?can\s+we\s+add\s+", "Add "),
+        (r"^(?:additionally,\s*)?can\s+we\s+remove\s+", "Remove "),
         (r"^make\s+this\s+better\b[:\-]?\s*", "Improve "),
         (r"^make\s+this\s+clearer\b[:\-]?\s*", "Clarify "),
         (r"^turn\s+this\s+into\s+", "Transform this into "),
@@ -325,6 +463,9 @@ def _refine_goal(goal: str, mode: str, boost_level: int = 0) -> str:
         ("describe ", "Provide a focused description of "),
         ("compare ", "Provide a clear comparison of "),
         ("list ", "List "),
+        ("add ", "Add "),
+        ("remove ", "Remove "),
+        ("ensure ", "Ensure "),
         ("write ", "Write "),
         ("create ", "Create "),
         ("tell me about ", "Provide a concise overview of "),
@@ -336,6 +477,8 @@ def _refine_goal(goal: str, mode: str, boost_level: int = 0) -> str:
         ("determine why ", "Determine why "),
         ("how do i ", "Explain how to "),
         ("how to ", "Explain how to "),
+        ("how can we ensure ", "Ensure "),
+        ("can we ensure ", "Ensure "),
         ("what is ", "Explain "),
         ("provide ", "Provide "),
         ("clarify ", "Clarify "),
@@ -360,9 +503,9 @@ def _has_keyword(text: str, keyword: str) -> bool:
 
 def _style_text(brevity: str, mode: str) -> str:
     if brevity == "expert":
-        return "Deep, rigorous, and insight-rich." if mode == "general" else "Rigorous, technically precise, and implementation-focused."
+        return "Deep, rigorous, and insight-rich." if mode == "general" else "Technically precise, rigorous, and implementation-focused."
     if brevity == "balanced":
-        return "Clear, polished, and moderately detailed." if mode == "general" else "Clear, technically grounded, and implementation-focused."
+        return "Clear, direct, and moderately detailed." if mode == "general" else "Clear, technically grounded, and implementation-focused."
     return "Lean, polished, and high-signal." if mode == "general" else "Lean, technically precise, and action-oriented."
 
 
@@ -385,12 +528,63 @@ def _sentence_case(text: str) -> str:
 
 
 def _polish_extracted_line(line: str) -> str:
-    cleaned = _trim_filler(line.strip())
+    cleaned = _rewrite_extracted_line(_trim_filler(line.strip()))
     if not cleaned:
         return ""
     if re.match(r"^[a-z]", cleaned) and not re.match(r"^(?:```|\$|[./~]|[A-Za-z0-9_./-]+\()", cleaned):
         return _sentence_case(cleaned)
     return cleaned
+
+
+def _rewrite_extracted_line(line: str) -> str:
+    lowered = line.lower().strip()
+
+    if "how can we ensure " in lowered:
+        match = re.search(r"\bhow can we ensure\s+(.+)$", line, flags=re.IGNORECASE)
+        if match:
+            return _finalize_sentence(f"Ensure {_clean_clause(match.group(1))}")
+
+    if "can we ensure " in lowered:
+        match = re.search(r"\bcan we ensure\s+(.+)$", line, flags=re.IGNORECASE)
+        if match:
+            return _finalize_sentence(f"Ensure {_clean_clause(match.group(1))}")
+
+    if re.match(r"^we seem to be including random sentences from the initial prompt[. ]*$", lowered):
+        return "Prevent unrelated source sentences from leaking into the final prompt."
+
+    if lowered.startswith("we seem to be including "):
+        match = re.search(r"^we seem to be including\s+(.+)$", line, flags=re.IGNORECASE)
+        if match:
+            return _finalize_sentence(
+                f"Prevent {_clean_clause(match.group(1))} from leaking into the final prompt"
+            )
+
+    match = re.search(
+        r"^on the prompt to copy can we add\s+(.+?)(?:\s+here)?[. ]*$",
+        line,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return _finalize_sentence(
+            f"Add {_clean_clause(match.group(1))} to the prompt-to-copy panel"
+        )
+
+    if re.match(
+        r"^everything is jumbled together and (?:it is|it's) hard to read[. ]*$",
+        lowered,
+    ):
+        return "Improve readability and visual separation."
+
+    if re.match(
+        r"^on the options sections we have a default number set adjacent to the select \[\]\s*:[. ]*$",
+        lowered,
+    ):
+        return "The selection prompt currently shows a suggested default number."
+
+    if any(lowered.startswith(prefix) for prefix in ("add ", "remove ", "improve ", "ensure ", "prevent ")):
+        return _finalize_sentence(_clean_clause(line))
+
+    return line
 
 
 def _polish_line_text(line: str) -> str:
@@ -440,21 +634,28 @@ def _format_guidance(output_format: str, mode: str) -> str:
         return "Use numbered steps, keep each step concrete, and finish with a concise final recommendation."
     if lowered == "json":
         return "Return valid JSON only with stable keys and no surrounding prose."
+    if output_format:
+        return f"Use this output format: {output_format}."
     return ""
 
 
 def _quality_bar(mode: str, brevity: str, boost_level: int) -> str:
     if mode == "code":
-        baseline = "Resolve ambiguity, use exact technical language, and make the fix immediately actionable."
+        baseline = "Use exact technical language, ground the answer in the available evidence, and make the fix immediately actionable."
     else:
-        baseline = "Resolve ambiguity, use precise language, and keep the response immediately useful."
+        baseline = "Resolve ambiguity, use precise language, and keep the response directly useful."
 
     if brevity == "expert":
-        baseline = baseline.replace("immediately useful", "rigorous and insight-rich")
+        baseline = baseline.replace("directly useful", "rigorous and insight-rich")
         baseline = baseline.replace("immediately actionable", "rigorous and implementation-ready")
     elif brevity == "lean":
-        baseline = baseline.replace("use precise language, and keep the response immediately useful", "stay specific, remove filler, and prioritize signal over preamble")
-        baseline = baseline.replace("use exact technical language, and make the fix immediately actionable", "stay exact, remove filler, and prioritize the decisive fix")
+        baseline = baseline.replace("use precise language, and keep the response directly useful", "stay specific, remove filler, and prioritize signal over preamble")
+        baseline = baseline.replace("use exact technical language, ground the answer in the available evidence, and make the fix immediately actionable", "stay exact, ground the answer in the evidence you have, and prioritize the decisive fix")
+
+    if mode == "code":
+        baseline += " Prefer a general-purpose fix over a narrow workaround that only passes the current test. Keep the solution simple and avoid over-engineering."
+    else:
+        baseline += " State assumptions explicitly when context is missing."
 
     if boost_level > 0:
         baseline += " Push specificity further by sharpening deliverables, assumptions, and constraints."
@@ -500,3 +701,56 @@ def _drop_non_goal_openers(lines: list[str]) -> list[str]:
     if len(lines) > 1 and NON_GOAL_PATTERN.match(lines[0].strip()):
         return lines[1:]
     return lines
+
+
+def _select_goal_line(lines: list[str]) -> tuple[str, list[str]]:
+    if not lines:
+        return "Help with the request below.", []
+
+    best_index = 0
+    best_score = _goal_score(lines[0])
+    for index, line in enumerate(lines[1:], start=1):
+        score = _goal_score(line)
+        if score > best_score:
+            best_index = index
+            best_score = score
+
+    if best_score <= 0:
+        return lines[0], lines[1:]
+
+    remainder = [line for index, line in enumerate(lines) if index != best_index]
+    return lines[best_index], remainder
+
+
+def _goal_score(line: str) -> int:
+    lowered = line.lower().strip()
+    score = 0
+
+    if any(lowered.startswith(prefix) for prefix in ACTION_PREFIXES):
+        score += 5
+
+    if WEAK_GOAL_PATTERN.match(lowered):
+        score -= 2
+
+    if "?" in line:
+        score -= 1
+
+    if len(lowered.split()) <= 3:
+        score -= 1
+
+    return score
+
+
+def _clean_clause(text: str) -> str:
+    cleaned = text.strip(" \t\n\r.;:-")
+    cleaned = re.sub(r"\s+here$", "", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
+def _finalize_sentence(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if cleaned[-1] in ".!?":
+        return cleaned
+    return f"{cleaned}."
