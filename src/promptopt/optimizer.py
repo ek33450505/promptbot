@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import re
-from string import Template
 
 CODE_HARD_PATTERNS = (
     re.compile(r"```"),
@@ -54,11 +53,6 @@ ADVANCED_AUDIENCE_PATTERN = re.compile(
     r"\b(?:advanced|expert|senior|staff|principal|phd|graduate|technical audience)\b",
     re.IGNORECASE,
 )
-STYLE_ALIASES = {
-    "concise": "lean",
-    "standard": "balanced",
-    "extended": "expert",
-}
 COMMON_TYPO_REPLACEMENTS = (
     (r"\brealy\b", "really"),
     (r"\bfiggure\b", "figure"),
@@ -202,10 +196,41 @@ def detect_mode(prompt: str) -> str:
     return "code" if score >= 2 else "general"
 
 
+def _extract_core(
+    normalized: str,
+    mode: str,
+    preferences: PromptPreferences,
+) -> tuple[str, list[str], list[str], list[str]]:
+    lines = [
+        line
+        for line in (_polish_extracted_line(line) for line in _normalize_for_extraction(normalized))
+        if line
+    ]
+    lines = _drop_non_goal_openers(lines)
+    lines = [line for line in lines if not NOISE_PATTERN.match(line)]
+    goal, remainder = _select_goal_line(lines)
+
+    context_lines: list[str] = []
+    constraint_lines: list[str] = []
+    output_lines: list[str] = []
+
+    for line in remainder:
+        if CONSTRAINT_PATTERN.search(line):
+            constraint_lines.append(line)
+        elif OUTPUT_PATTERN.search(line):
+            output_lines.append(line)
+        else:
+            context_lines.append(line)
+
+    if preferences.include:
+        output_lines.append(_finalize_sentence(f"Must include {preferences.include}"))
+
+    return _refine_goal(goal, mode, preferences.boost_level), context_lines, constraint_lines, output_lines
+
+
 def optimize_prompt(
     prompt: str,
     requested_mode: str,
-    templates: dict[str, str],
     preferences: PromptPreferences | None = None,
 ) -> OptimizationResult:
     normalized = normalize_prompt(prompt)
@@ -213,12 +238,18 @@ def optimize_prompt(
     if resolved_mode not in {"code", "general"}:
         raise ValueError(f"Unsupported mode: {resolved_mode}")
 
-    sections = _extract_sections(
-        normalized,
-        resolved_mode,
-        preferences or PromptPreferences(),
-    )
-    optimized = Template(templates[resolved_mode]).safe_substitute(**sections).strip()
+    prefs = preferences or PromptPreferences()
+
+    inferred_format = _infer_output_format(normalized, prefs.output_format)
+    if inferred_format != prefs.output_format:
+        prefs = replace(prefs, output_format=inferred_format)
+
+    inferred_audience = _infer_audience(normalized, prefs.audience)
+    if inferred_audience != prefs.audience:
+        prefs = replace(prefs, audience=inferred_audience)
+
+    goal, context_lines, constraint_lines, output_lines = _extract_core(normalized, resolved_mode, prefs)
+    optimized = _render_directive(goal, context_lines, constraint_lines, output_lines, prefs, resolved_mode)
 
     return OptimizationResult(
         source_prompt=prompt,
@@ -236,172 +267,6 @@ def _compact_line(line: str) -> str:
         cleaned = re.sub(r"[ \t]+", " ", body).strip()
         return f"{prefix}{_polish_line_text(cleaned)}"
     return _polish_line_text(re.sub(r"[ \t]+", " ", line).strip())
-
-
-def _extract_sections(
-    normalized: str,
-    mode: str,
-    preferences: PromptPreferences,
-) -> dict[str, str]:
-    brevity = _normalize_brevity(preferences.brevity)
-    audience = _infer_audience(normalized, preferences.audience)
-    output_format = _infer_output_format(normalized, preferences.output_format)
-    lines = [line for line in (_polish_extracted_line(line) for line in _normalize_for_extraction(normalized)) if line]
-    lines = _drop_non_goal_openers(lines)
-    lines = [line for line in lines if not NOISE_PATTERN.match(line)]
-    goal, remainder = _select_goal_line(lines)
-
-    context_lines: list[str] = []
-    constraint_lines: list[str] = []
-    output_lines: list[str] = []
-
-    for line in remainder:
-        if CONSTRAINT_PATTERN.search(line):
-            constraint_lines.append(line)
-        elif OUTPUT_PATTERN.search(line):
-            output_lines.append(line)
-        else:
-            context_lines.append(line)
-
-    deliverable_lines = list(output_lines)
-    if preferences.include:
-        deliverable_lines.append(_finalize_sentence(f"Must include {preferences.include}"))
-
-    constraint_items = list(constraint_lines)
-    if preferences.avoid:
-        constraint_items.append(_finalize_sentence(f"Exclude {preferences.avoid}"))
-
-    role_text = _role_text(mode, preferences.persona)
-    style_text = _style_text(brevity, mode)
-    format_text = _format_guidance(output_format, mode)
-    quality_text = _quality_bar(mode, brevity, preferences.boost_level)
-    reasoning_text = (
-        "Reason step-by-step internally when it improves accuracy, but present only the final answer unless the user asks for your reasoning."
-        if preferences.reasoning
-        else ""
-    )
-    citation_text = (
-        "Use reliable citations when factual claims matter, and state uncertainty clearly."
-        if preferences.citations
-        else ""
-    )
-    instruction_parts = [
-        _tag_block("format", format_text, indent=2),
-        _tag_block("style", style_text, indent=2),
-        _xml_block_from_lines("deliverables", deliverable_lines, indent=2),
-        _xml_block_from_lines("constraints", constraint_items, indent=2),
-        _tag_block("quality_bar", quality_text, indent=2),
-        _tag_block("reasoning", reasoning_text, indent=2),
-        _tag_block("source_handling", citation_text, indent=2),
-    ]
-
-    return {
-        "goal": _refine_goal(goal, mode, preferences.boost_level),
-        "context": _join_lines(context_lines),
-        "constraints": _join_lines(constraint_lines),
-        "output": _join_lines(output_lines),
-        "success": "",
-        "prompt": normalized,
-        "role_block": _tag_block("role", role_text),
-        "audience_xml_block": _tag_block("audience", audience) if audience != "general" else "",
-        "context_xml_block": _xml_block_from_lines("context", context_lines),
-        "instructions_block": _container_block("instructions", instruction_parts),
-        "persona_block": _single_line_block("Role", preferences.persona),
-        "audience_block": _single_line_block(
-            "Target audience",
-            "" if audience == "general" else audience,
-        ),
-        "format_block": _single_line_block("Preferred format", output_format),
-        "style_block": _single_line_block(
-            "Response style",
-            style_text,
-        ),
-        "structure_block": _single_line_block(
-            "Output instructions",
-            format_text,
-        ),
-        "quality_block": _single_line_block(
-            "Quality bar",
-            quality_text,
-        ),
-        "include_block": _single_line_block("Key requirement", preferences.include),
-        "avoid_block": _single_line_block("Avoid", preferences.avoid),
-        "reasoning_block": _single_line_block(
-            "Reasoning",
-            reasoning_text,
-        ),
-        "citation_block": _single_line_block(
-            "Source handling",
-            citation_text,
-        ),
-        "context_block": _render_block("Additional context", context_lines),
-        "constraints_block": _render_block("Constraints", constraint_lines),
-        "output_block": _render_block("Requested output", output_lines),
-    }
-
-
-def _join_lines(lines: list[str]) -> str:
-    return "; ".join(lines)
-
-
-def _render_block(label: str, lines: list[str]) -> str:
-    if not lines:
-        return ""
-
-    if all("```" not in line for line in lines):
-        if len(lines) == 1:
-            return f"{label}: {lines[0]}\n"
-        return f"{label}:\n" + "\n".join(f"- {line}" for line in lines) + "\n"
-
-    return f"{label}:\n" + "\n".join(lines) + "\n"
-
-
-def _single_line_block(label: str, value: str) -> str:
-    return f"{label}: {value}\n" if value else ""
-
-
-def _tag_block(tag: str, value: str, indent: int = 0) -> str:
-    if not value:
-        return ""
-
-    pad = " " * indent
-    inner_pad = " " * (indent + 2)
-    body = "\n".join(f"{inner_pad}{line}" for line in value.splitlines())
-    return f"{pad}<{tag}>\n{body}\n{pad}</{tag}>\n"
-
-
-def _tag_list_block(tag: str, lines: list[str], indent: int = 0) -> str:
-    if not lines:
-        return ""
-
-    pad = " " * indent
-    inner_pad = " " * (indent + 2)
-    body = "\n".join(f"{inner_pad}- {line}" for line in lines)
-    return f"{pad}<{tag}>\n{body}\n{pad}</{tag}>\n"
-
-
-def _xml_block_from_lines(tag: str, lines: list[str], indent: int = 0) -> str:
-    if not lines:
-        return ""
-
-    if all("```" not in line for line in lines):
-        if len(lines) == 1:
-            return _tag_block(tag, lines[0], indent=indent)
-        return _tag_list_block(tag, lines, indent=indent)
-
-    pad = " " * indent
-    inner_pad = " " * (indent + 2)
-    body = "\n".join(f"{inner_pad}{line}" for line in lines)
-    return f"{pad}<{tag}>\n{body}\n{pad}</{tag}>\n"
-
-
-def _container_block(tag: str, blocks: list[str], indent: int = 0) -> str:
-    content = "".join(block for block in blocks if block)
-    if not content:
-        return ""
-
-    pad = " " * indent
-    return f"{pad}<{tag}>\n{content}{pad}</{tag}>\n"
 
 
 def _role_text(mode: str, persona: str) -> str:
@@ -554,14 +419,6 @@ def _has_keyword(text: str, keyword: str) -> bool:
     return re.search(rf"\b{re.escape(keyword)}\b", text) is not None
 
 
-def _style_text(brevity: str, mode: str) -> str:
-    if brevity == "expert":
-        return "Deep, rigorous, and insight-rich." if mode == "general" else "Technically precise, rigorous, and implementation-focused."
-    if brevity == "balanced":
-        return "Clear, direct, and moderately detailed." if mode == "general" else "Clear, technically grounded, and implementation-focused."
-    return "Lean, polished, and high-signal." if mode == "general" else "Lean, technically precise, and action-oriented."
-
-
 def _normalize_for_extraction(normalized: str) -> list[str]:
     if "\n" in normalized:
         return [line for line in normalized.splitlines() if line.strip()]
@@ -644,11 +501,6 @@ def _polish_line_text(line: str) -> str:
     return _polish_plain_language(_trim_filler(_correct_common_typos(line)))
 
 
-def _normalize_brevity(brevity: str) -> str:
-    normalized = (brevity or "balanced").strip().lower()
-    return STYLE_ALIASES.get(normalized, normalized)
-
-
 def _infer_audience(prompt: str, preferred_audience: str) -> str:
     if preferred_audience and preferred_audience != "general":
         return preferred_audience
@@ -673,47 +525,6 @@ def _infer_output_format(prompt: str, selected_format: str) -> str:
     if "paragraph" in lowered:
         return "short paragraph"
     return ""
-
-
-def _format_guidance(output_format: str, mode: str) -> str:
-    lowered = output_format.lower()
-    if lowered == "short paragraph":
-        return "Use one compact paragraph with no preamble or filler."
-    if lowered == "bullet points":
-        return "Use short bullet points ordered by importance."
-    if lowered == "step-by-step":
-        if mode == "code":
-            return "Use numbered steps, isolate the root cause, show the fix, and end with a verification step."
-        return "Use numbered steps, keep each step concrete, and finish with a concise final recommendation."
-    if lowered == "json":
-        return "Return valid JSON only with stable keys and no surrounding prose."
-    if output_format:
-        return f"Use this output format: {output_format}."
-    return ""
-
-
-def _quality_bar(mode: str, brevity: str, boost_level: int) -> str:
-    if mode == "code":
-        baseline = "Use exact technical language, ground the answer in the available evidence, and make the fix immediately actionable."
-    else:
-        baseline = "Resolve ambiguity, use precise language, and keep the response directly useful."
-
-    if brevity == "expert":
-        baseline = baseline.replace("directly useful", "rigorous and insight-rich")
-        baseline = baseline.replace("immediately actionable", "rigorous and implementation-ready")
-    elif brevity == "lean":
-        baseline = baseline.replace("use precise language, and keep the response directly useful", "stay specific, remove filler, and prioritize signal over preamble")
-        baseline = baseline.replace("use exact technical language, ground the answer in the available evidence, and make the fix immediately actionable", "stay exact, ground the answer in the evidence you have, and prioritize the decisive fix")
-
-    if mode == "code":
-        baseline += " Prefer a general-purpose fix over a narrow workaround that only passes the current test. Keep the solution simple and avoid over-engineering."
-    else:
-        baseline += " State assumptions explicitly when context is missing."
-
-    if boost_level > 0:
-        baseline += " Push specificity further by sharpening deliverables, assumptions, and constraints."
-
-    return baseline
 
 
 def _upgrade_goal_tone(goal: str, boost_level: int) -> str:

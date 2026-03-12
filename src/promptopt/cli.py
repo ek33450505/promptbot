@@ -50,13 +50,12 @@ def main(prompt_parts: tuple[str, ...], mode: str | None, copy: bool) -> None:
     prompt_text = read_prompt_text(prompt_parts)
 
     if prompt_text is None:
-        run_interactive(requested_mode, config.templates)
+        run_interactive(requested_mode)
         return
 
     result = optimize_prompt(
         prompt_text,
         requested_mode,
-        config.templates,
         preferences=PromptPreferences(),
     )
     render_result(prompt_text, result.optimized_prompt, result.resolved_mode)
@@ -79,7 +78,7 @@ def read_prompt_text(prompt_parts: tuple[str, ...]) -> str | None:
     return None
 
 
-def run_interactive(requested_mode: str, templates: dict[str, str]) -> None:
+def run_interactive(requested_mode: str) -> None:
     show_startup()
     base_preferences = collect_preferences()
     active_preferences = base_preferences
@@ -102,7 +101,6 @@ def run_interactive(requested_mode: str, templates: dict[str, str]) -> None:
         result = optimize_prompt(
             prompt_text,
             requested_mode,
-            templates,
             preferences=active_preferences,
         )
         render_result(
