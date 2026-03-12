@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-import re
 import shutil
 import subprocess
 import sys
@@ -356,10 +355,6 @@ def _build_prompt_copy_renderable(optimized_prompt: str) -> Table:
 
 
 def _extract_render_rows(optimized_prompt: str) -> list[tuple[str, str]]:
-    xml_rows = _extract_xml_rows(optimized_prompt)
-    if xml_rows:
-        return xml_rows
-
     rows: list[tuple[str, str]] = []
     pending_label = ""
     pending_value: list[str] = []
@@ -378,49 +373,20 @@ def _extract_render_rows(optimized_prompt: str) -> list[tuple[str, str]]:
             continue
 
         if ":" in stripped:
-            flush()
-            label, value = stripped.split(":", 1)
-            pending_label = label.upper()
-            pending_value = [value.strip()] if value.strip() else []
-            continue
+            colon_idx = stripped.index(":")
+            label_candidate = stripped[:colon_idx]
+            # A valid label has no spaces and does not start with a digit
+            if label_candidate and not label_candidate[0].isdigit() and " " not in label_candidate:
+                flush()
+                pending_label = label_candidate.upper()
+                value = stripped[colon_idx + 1:].strip()
+                if value:
+                    pending_value = [value]
+                continue
 
         pending_value.append(stripped)
 
     flush()
-    return rows
-
-
-def _extract_xml_rows(optimized_prompt: str) -> list[tuple[str, str]]:
-    rows: list[tuple[str, str]] = []
-    stack: list[str] = []
-    buffers: list[list[str]] = []
-
-    for raw_line in optimized_prompt.splitlines():
-        stripped = raw_line.strip()
-        if not stripped:
-            continue
-
-        open_match = re.fullmatch(r"<([a-z_]+)>", stripped)
-        if open_match:
-            stack.append(open_match.group(1))
-            buffers.append([])
-            continue
-
-        close_match = re.fullmatch(r"</([a-z_]+)>", stripped)
-        if close_match:
-            if not stack:
-                continue
-            tag = stack.pop()
-            content = buffers.pop()
-            if tag != close_match.group(1):
-                continue
-            if tag != "instructions" and content:
-                rows.append((tag.replace("_", " ").upper(), "\n".join(content)))
-            continue
-
-        if stack and stack[-1] != "instructions":
-            buffers[-1].append(stripped)
-
     return rows
 
 

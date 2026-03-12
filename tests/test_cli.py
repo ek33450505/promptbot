@@ -14,6 +14,7 @@ from promptopt.cli import (
     collect_advanced_preferences,
     collect_interactive_prompt,
     collect_preferences,
+    _extract_render_rows,
     main,
     read_prompt_text,
 )
@@ -182,6 +183,40 @@ class CliTests(unittest.TestCase):
             ],
         )
         self.assertEqual(value, "balanced")
+
+
+class ExtractRenderRowsTests(unittest.TestCase):
+    def test_single_label_value_line(self) -> None:
+        rows = _extract_render_rows("Task: Explain recursion.")
+        self.assertEqual(rows, [("TASK", "Explain recursion.")])
+
+    def test_multiple_label_lines(self) -> None:
+        prompt = "Task: Fix the cache.\nContext: 3 pods behind LB."
+        rows = _extract_render_rows(prompt)
+        self.assertEqual(rows[0], ("TASK", "Fix the cache."))
+        self.assertEqual(rows[1], ("CONTEXT", "3 pods behind LB."))
+
+    def test_rules_block_collected_under_rules_label(self) -> None:
+        prompt = "Task: Fix it.\nRules:\n1. No restarts.\n2. Return one fix only."
+        rows = _extract_render_rows(prompt)
+        task_row = next(r for r in rows if r[0] == "TASK")
+        rules_row = next(r for r in rows if r[0] == "RULES")
+        self.assertEqual(task_row, ("TASK", "Fix it."))
+        self.assertIn("1. No restarts.", rules_row[1])
+        self.assertIn("2. Return one fix only.", rules_row[1])
+
+    def test_role_line_parsed_as_role_label(self) -> None:
+        prompt = "Role: You are a senior engineer.\nTask: Fix the auth bug."
+        rows = _extract_render_rows(prompt)
+        self.assertEqual(rows[0][0], "ROLE")
+        self.assertIn("senior engineer", rows[0][1])
+
+    def test_no_xml_parsing(self) -> None:
+        prompt = "Task: Fix it.\nContext: pods crash."
+        rows = _extract_render_rows(prompt)
+        for label, value in rows:
+            self.assertNotIn("<", label)
+            self.assertNotIn("<", value)
 
 
 if __name__ == "__main__":
