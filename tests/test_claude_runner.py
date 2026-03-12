@@ -9,7 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from promptopt.claude_runner import ClaudeExecutionError, build_command, stream_claude
-from promptopt.config import AppConfig, DEFAULT_TEMPLATES
+from promptopt.config import AppConfig
 
 
 class FakePipe(StringIO):
@@ -42,7 +42,6 @@ class ClaudeRunnerTests(unittest.TestCase):
             default_model="",
             default_mode="auto",
             default_claude_args=("--permission-mode", "plan"),
-            templates=DEFAULT_TEMPLATES,
             config_path=None,
         )
 
