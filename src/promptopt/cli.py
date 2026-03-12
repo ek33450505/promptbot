@@ -282,7 +282,7 @@ def collect_interactive_prompt() -> str:
             break
         lines.append(line)
 
-    return "\n".join(lines).strip()
+    return " ".join(lines).strip()
 
 
 def render_result(
