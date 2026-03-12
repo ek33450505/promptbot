@@ -42,7 +42,7 @@ CONSTRAINT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 OUTPUT_PATTERN = re.compile(
-    r"\b(?:return|respond|response|output|show|list|summarize|format|write|give me|reply|explain|include|provide|walk through|add|remove|improve|prevent|eliminate|clarify|refine|clean up)\b",
+    r"\b(?:return|respond|response|output|show|list|summarize|format|write|give me|reply|explain|include|provide|walk through|add|remove|improve|prevent|eliminate|clarify|refine|clean up|analyze|prioritize|recommend|diagnose|identify|suggest|describe|compare|review|determine)\b",
     re.IGNORECASE,
 )
 BEGINNER_AUDIENCE_PATTERN = re.compile(
@@ -87,6 +87,12 @@ COMMON_PHRASE_REPLACEMENTS = (
     (r"\bnot full of fluff\b", "without filler"),
     (r"\binfra\b", "infrastructure"),
     (r"\bnot code\b", "rather than application code"),
+)
+_COMPOUND_ACTION_SPLIT = re.compile(
+    r",\s+(?:and\s+)?(?="
+    r"(?:add|analyze|build|clarify|compare|configure|create|debug|deliver|deploy|describe|determine|diagnose|document|eliminate|ensure|explain|fix|identify|implement|improve|include|list|prevent|prioritize|provide|recommend|refine|remove|return|review|show|summarize|suggest|test|transform|write)"
+    r"\s+\w+\s+\w+)",
+    re.IGNORECASE,
 )
 NON_GOAL_PATTERN = re.compile(
     r"^(?:nice work(?: dude)?|good job|great job|looks good|awesome|thanks|thank you|nice one)[!. ]*$",
@@ -206,6 +212,10 @@ def _extract_core(
         for line in (_polish_extracted_line(line) for line in _normalize_for_extraction(normalized))
         if line
     ]
+    split_lines: list[str] = []
+    for line in lines:
+        split_lines.extend(_split_compound_action_line(line))
+    lines = split_lines
     lines = _drop_non_goal_openers(lines)
     lines = [line for line in lines if not NOISE_PATTERN.match(line)]
     goal, remainder = _select_goal_line(lines)
@@ -618,3 +628,10 @@ def _finalize_sentence(text: str) -> str:
     if cleaned[-1] in ".!?":
         return cleaned
     return f"{cleaned}."
+
+
+def _split_compound_action_line(line: str) -> list[str]:
+    parts = _COMPOUND_ACTION_SPLIT.split(line)
+    if len(parts) <= 1:
+        return [line]
+    return [_finalize_sentence(_sentence_case(p.strip())) for p in parts if p.strip()]

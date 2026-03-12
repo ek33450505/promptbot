@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from promptopt.optimizer import (
     PromptPreferences,
     _render_directive,
+    _split_compound_action_line,
     detect_mode,
     normalize_prompt,
     optimize_prompt,
@@ -202,6 +203,53 @@ class RenderDirectiveTests(unittest.TestCase):
         )
         self.assertNotIn("<", result)
         self.assertNotIn(">", result)
+
+
+class CompoundActionSplitTests(unittest.TestCase):
+    def test_splits_four_parallel_action_clauses(self) -> None:
+        line = "Analyze the likely root causes, prioritize the first diagnostic checks, recommend the most likely fix, and provide a clear step-by-step plan."
+        parts = _split_compound_action_line(line)
+        self.assertEqual(len(parts), 4)
+        self.assertIn("Analyze the likely root causes.", parts)
+        self.assertIn("Prioritize the first diagnostic checks.", parts)
+        self.assertIn("Recommend the most likely fix.", parts)
+        self.assertIn("Provide a clear step-by-step plan.", parts)
+
+    def test_simple_single_clause_not_split(self) -> None:
+        line = "Analyze the likely root causes of deployment failures."
+        parts = _split_compound_action_line(line)
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(parts[0], line)
+
+    def test_noun_list_not_split(self) -> None:
+        # "validate" followed by only "," not "word word" — should not split
+        line = "Create a function that can parse, validate, and transform data."
+        parts = _split_compound_action_line(line)
+        self.assertEqual(len(parts), 1)
+
+    def test_two_clause_compound_split(self) -> None:
+        line = "Explain the root cause, and recommend a concrete fix."
+        parts = _split_compound_action_line(line)
+        self.assertEqual(len(parts), 2)
+        self.assertIn("Explain the root cause.", parts)
+        self.assertIn("Recommend a concrete fix.", parts)
+
+    def test_pipeline_prompt_produces_multiple_output_lines(self) -> None:
+        result = optimize_prompt(
+            "I need a strong prompt for claude to help me figure out why our python data pipeline keeps failing at random after we deploy. the logs are messy and sometimes it says timeout and other times memory error. I want claude to look at the possible root cause, tell me what to check first, suggest the most likely fix, and give me a clear step by step plan my engineering team can follow tomorrow morning.",
+            "code",
+            preferences=PromptPreferences(output_format="step-by-step", brevity="expert"),
+        )
+        self.assertIn("Task: Determine why our Python data pipeline keeps failing intermittently after deployment.", result.optimized_prompt)
+        self.assertIn("Analyze the likely root causes.", result.optimized_prompt)
+        self.assertIn("Prioritize the first diagnostic checks.", result.optimized_prompt)
+        self.assertIn("Recommend the most likely fix.", result.optimized_prompt)
+        self.assertIn("engineering team can follow tomorrow morning", result.optimized_prompt)
+        # Should be multiple numbered rules
+        self.assertIn("Rules:", result.optimized_prompt)
+        self.assertIn("1.", result.optimized_prompt)
+        self.assertIn("2.", result.optimized_prompt)
+        self.assertIn("3.", result.optimized_prompt)
 
 
 class OptimizePromptTests(unittest.TestCase):
