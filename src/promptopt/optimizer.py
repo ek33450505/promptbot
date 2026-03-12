@@ -222,9 +222,6 @@ def _extract_core(
         else:
             context_lines.append(line)
 
-    if preferences.include:
-        output_lines.append(_finalize_sentence(f"Must include {preferences.include}"))
-
     return _refine_goal(goal, mode, preferences.boost_level), context_lines, constraint_lines, output_lines
 
 
@@ -307,6 +304,9 @@ def _render_directive(
 
     if preferences.avoid:
         rules.append(_finalize_sentence(f"Exclude {preferences.avoid}"))
+
+    if preferences.include:
+        rules.append(_finalize_sentence(f"Must include {preferences.include}"))
 
     rules.extend(output_lines)
 
