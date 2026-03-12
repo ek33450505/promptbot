@@ -6,8 +6,13 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from promptopt.config import DEFAULT_TEMPLATES
-from promptopt.optimizer import PromptPreferences, detect_mode, normalize_prompt, optimize_prompt
+from promptopt.optimizer import (
+    PromptPreferences,
+    _render_directive,
+    detect_mode,
+    normalize_prompt,
+    optimize_prompt,
+)
 
 
 class NormalizePromptTests(unittest.TestCase):
@@ -59,6 +64,144 @@ class DetectModeTests(unittest.TestCase):
     def test_does_not_match_repo_inside_report(self) -> None:
         prompt = "Make this bug report clearer."
         self.assertEqual(detect_mode(prompt), "general")
+
+
+class RenderDirectiveTests(unittest.TestCase):
+    def test_minimal_directive_has_task_only(self) -> None:
+        result = _render_directive(
+            goal="Explain recursion.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(),
+            mode="general",
+        )
+        self.assertEqual(result, "Task: Explain recursion.")
+        self.assertNotIn("Context:", result)
+        self.assertNotIn("Rules:", result)
+        self.assertNotIn("Format:", result)
+
+    def test_context_line_appended_when_present(self) -> None:
+        result = _render_directive(
+            goal="Debug the worker process.",
+            context_lines=["Crashes on empty queue"],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(),
+            mode="code",
+        )
+        self.assertIn("Task: Debug the worker process.", result)
+        self.assertIn("Context: Crashes on empty queue.", result)
+
+    def test_multiple_context_lines_comma_joined(self) -> None:
+        result = _render_directive(
+            goal="Debug the worker.",
+            context_lines=["Runs on 3 pods", "crashes at peak traffic"],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(),
+            mode="code",
+        )
+        self.assertIn("Context: Runs on 3 pods, crashes at peak traffic.", result)
+
+    def test_constraint_lines_become_numbered_rules(self) -> None:
+        result = _render_directive(
+            goal="Fix the cache.",
+            context_lines=[],
+            constraint_lines=["Must not restart pods.", "Avoid full cache flush."],
+            output_lines=[],
+            preferences=PromptPreferences(),
+            mode="code",
+        )
+        self.assertIn("Rules:", result)
+        self.assertIn("1. Must not restart pods.", result)
+        self.assertIn("2. Avoid full cache flush.", result)
+
+    def test_output_lines_added_to_rules(self) -> None:
+        result = _render_directive(
+            goal="Summarize the report.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=["Return three bullet points.", "Include a headline."],
+            preferences=PromptPreferences(),
+            mode="general",
+        )
+        self.assertIn("Rules:", result)
+        self.assertIn("Return three bullet points.", result)
+        self.assertIn("Include a headline.", result)
+
+    def test_avoid_preference_adds_rule(self) -> None:
+        result = _render_directive(
+            goal="Explain DNS.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(avoid="marketing language"),
+            mode="general",
+        )
+        self.assertIn("Rules:", result)
+        self.assertIn("Exclude marketing language.", result)
+
+    def test_format_line_present_when_format_set(self) -> None:
+        result = _render_directive(
+            goal="Debug the crash.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(output_format="step-by-step"),
+            mode="code",
+        )
+        self.assertIn("Format: step-by-step.", result)
+
+    def test_format_line_absent_when_no_format(self) -> None:
+        result = _render_directive(
+            goal="Explain DNS.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(),
+            mode="general",
+        )
+        self.assertNotIn("Format:", result)
+
+    def test_persona_prepended_as_role_line(self) -> None:
+        result = _render_directive(
+            goal="Explain recursion.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(persona="expert Python instructor"),
+            mode="general",
+        )
+        self.assertTrue(result.startswith("Role: You are an expert Python instructor."))
+
+    def test_expert_brevity_adds_style_rule(self) -> None:
+        result = _render_directive(
+            goal="Explain DNS.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(brevity="expert"),
+            mode="general",
+        )
+        self.assertIn("Rules:", result)
+        self.assertIn("Use expert depth", result)
+
+    def test_no_xml_tags_in_output(self) -> None:
+        result = _render_directive(
+            goal="Fix the auth bug.",
+            context_lines=["JWT tokens expire too fast"],
+            constraint_lines=["Must not break existing sessions."],
+            output_lines=["Return the patched function only."],
+            preferences=PromptPreferences(
+                persona="security engineer",
+                brevity="expert",
+                output_format="bullet points",
+            ),
+            mode="code",
+        )
+        self.assertNotIn("<", result)
+        self.assertNotIn(">", result)
 
 
 class OptimizePromptTests(unittest.TestCase):

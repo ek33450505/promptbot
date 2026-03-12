@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 from string import Template
 
@@ -412,6 +412,59 @@ def _role_text(mode: str, persona: str) -> str:
         article = "an" if custom[:1].lower() in {"a", "e", "i", "o", "u"} else "a"
         return f"You are {article} {custom}."
     return ""
+
+
+def _render_directive(
+    goal: str,
+    context_lines: list[str],
+    constraint_lines: list[str],
+    output_lines: list[str],
+    preferences: PromptPreferences,
+    mode: str,
+) -> str:
+    parts: list[str] = []
+
+    if preferences.persona:
+        parts.append(f"Role: {_role_text(mode, preferences.persona)}")
+
+    parts.append(f"Task: {goal}")
+
+    if context_lines:
+        context = ", ".join(line.rstrip(". ") for line in context_lines)
+        parts.append(f"Context: {_finalize_sentence(context)}")
+
+    rules: list[str] = []
+
+    if preferences.audience and preferences.audience != "general":
+        rules.append(f"Target a {preferences.audience} audience.")
+
+    rules.extend(constraint_lines)
+
+    if preferences.avoid:
+        rules.append(_finalize_sentence(f"Exclude {preferences.avoid}"))
+
+    rules.extend(output_lines)
+
+    if preferences.brevity == "expert":
+        if mode == "general":
+            rules.append("Use expert depth; be technically precise and insight-rich.")
+        else:
+            rules.append("Use expert depth; be technically precise and implementation-focused.")
+
+    if preferences.reasoning:
+        rules.append("Reason step-by-step internally; present only the final answer.")
+
+    if preferences.citations:
+        rules.append("Cite sources for factual claims.")
+
+    if rules:
+        numbered = "\n".join(f"{i}. {rule}" for i, rule in enumerate(rules, 1))
+        parts.append(f"Rules:\n{numbered}")
+
+    if preferences.output_format:
+        parts.append(f"Format: {preferences.output_format}.")
+
+    return "\n".join(parts)
 
 
 def _trim_filler(line: str) -> str:
