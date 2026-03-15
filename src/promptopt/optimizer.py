@@ -45,6 +45,14 @@ OUTPUT_PATTERN = re.compile(
     r"\b(?:return|respond|response|output|show|list|summarize|format|write|give me|reply|explain|include|provide|walk through|add|remove|improve|prevent|eliminate|clarify|refine|clean up|analyze|prioritize|recommend|diagnose|identify|suggest|describe|compare|review|determine)\b",
     re.IGNORECASE,
 )
+REASONING_PATTERN = re.compile(
+    r"\b(?:the goal is|goal is|the aim is|aim is|because|so that|in order to|the reason|the purpose|this will|this matters|by doing|this helps|the intent)\b",
+    re.IGNORECASE,
+)
+STOP_CONDITION_PATTERN = re.compile(
+    r"\b(?:stop when|only when|complete when|done when|finish when|only stop|until|consider it done|success when|the output is complete)\b",
+    re.IGNORECASE,
+)
 BEGINNER_AUDIENCE_PATTERN = re.compile(
     r"\b(?:beginner|novice|new to|kid|child|middle school|high school|student|non-technical)\b",
     re.IGNORECASE,
@@ -150,6 +158,8 @@ class PromptPreferences:
     citations: bool = False
     reasoning: bool = False
     boost_level: int = 0
+    reasoning_goal: str = ""
+    stop_conditions: str = ""
 
 
 def normalize_prompt(prompt: str) -> str:
@@ -206,7 +216,7 @@ def _extract_core(
     normalized: str,
     mode: str,
     preferences: PromptPreferences,
-) -> tuple[str, list[str], list[str], list[str]]:
+) -> tuple[str, list[str], list[str], list[str], list[str], list[str]]:
     lines = [
         line
         for line in (_polish_extracted_line(line) for line in _normalize_for_extraction(normalized))
@@ -221,18 +231,24 @@ def _extract_core(
     goal, remainder = _select_goal_line(lines)
 
     context_lines: list[str] = []
+    reasoning_lines: list[str] = []
     constraint_lines: list[str] = []
+    stop_lines: list[str] = []
     output_lines: list[str] = []
 
     for line in remainder:
-        if CONSTRAINT_PATTERN.search(line):
+        if STOP_CONDITION_PATTERN.search(line):
+            stop_lines.append(line)
+        elif REASONING_PATTERN.search(line):
+            reasoning_lines.append(line)
+        elif CONSTRAINT_PATTERN.search(line):
             constraint_lines.append(line)
         elif OUTPUT_PATTERN.search(line):
             output_lines.append(line)
         else:
             context_lines.append(line)
 
-    return _refine_goal(goal, mode, preferences.boost_level), context_lines, constraint_lines, output_lines
+    return _refine_goal(goal, mode, preferences.boost_level), context_lines, reasoning_lines, constraint_lines, stop_lines, output_lines
 
 
 def optimize_prompt(
@@ -255,8 +271,8 @@ def optimize_prompt(
     if inferred_audience != prefs.audience:
         prefs = replace(prefs, audience=inferred_audience)
 
-    goal, context_lines, constraint_lines, output_lines = _extract_core(normalized, resolved_mode, prefs)
-    optimized = _render_directive(goal, context_lines, constraint_lines, output_lines, prefs, resolved_mode)
+    goal, context_lines, reasoning_lines, constraint_lines, stop_lines, output_lines = _extract_core(normalized, resolved_mode, prefs)
+    optimized = _render_directive(goal, context_lines, constraint_lines, output_lines, prefs, resolved_mode, reasoning_lines=reasoning_lines, stop_lines=stop_lines)
 
     return OptimizationResult(
         source_prompt=prompt,
@@ -293,6 +309,8 @@ def _render_directive(
     output_lines: list[str],
     preferences: PromptPreferences,
     mode: str,
+    reasoning_lines: list[str] | None = None,
+    stop_lines: list[str] | None = None,
 ) -> str:
     parts: list[str] = []
 
@@ -304,6 +322,19 @@ def _render_directive(
     if context_lines:
         context = ", ".join(line.rstrip(". ") for line in context_lines)
         parts.append(f"Context: {_finalize_sentence(context)}")
+
+    reasoning_text = preferences.reasoning_goal
+    if not reasoning_text and reasoning_lines:
+        reasoning_text = " ".join(reasoning_lines)
+    if reasoning_text:
+        parts.append(f"Reasoning: {_finalize_sentence(reasoning_text)}")
+
+    stop_items = list(stop_lines or [])
+    if preferences.stop_conditions:
+        stop_items.append(preferences.stop_conditions)
+    if stop_items:
+        numbered = "\n".join(f"{i}. {item}" for i, item in enumerate(stop_items, 1))
+        parts.append(f"Stop-conditions:\n{numbered}")
 
     rules: list[str] = []
 

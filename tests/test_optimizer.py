@@ -188,6 +188,85 @@ class RenderDirectiveTests(unittest.TestCase):
         self.assertIn("Rules:", result)
         self.assertIn("Use expert depth", result)
 
+    def test_reasoning_lines_render_reasoning_section(self) -> None:
+        result = _render_directive(
+            goal="Build a launch plan.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(),
+            mode="general",
+            reasoning_lines=["The goal is to onboard engineers faster."],
+        )
+        self.assertIn("Reasoning: The goal is to onboard engineers faster.", result)
+
+    def test_reasoning_goal_preference_overrides_extracted_reasoning(self) -> None:
+        result = _render_directive(
+            goal="Build a launch plan.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(reasoning_goal="Speed matters most here."),
+            mode="general",
+            reasoning_lines=["The goal is something else."],
+        )
+        self.assertIn("Reasoning: Speed matters most here.", result)
+        self.assertNotIn("something else", result)
+
+    def test_stop_lines_render_stop_conditions_section(self) -> None:
+        result = _render_directive(
+            goal="Write a 30-day plan.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(),
+            mode="general",
+            stop_lines=["Stop when there is one deliverable per week."],
+        )
+        self.assertIn("Stop-conditions:", result)
+        self.assertIn("1. Stop when there is one deliverable per week.", result)
+
+    def test_stop_conditions_preference_appended_to_stop_items(self) -> None:
+        result = _render_directive(
+            goal="Write a plan.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(stop_conditions="End with a summary table."),
+            mode="general",
+            stop_lines=["Stop when each week has an owner."],
+        )
+        self.assertIn("Stop-conditions:", result)
+        self.assertIn("1. Stop when each week has an owner.", result)
+        self.assertIn("2. End with a summary table.", result)
+
+    def test_reasoning_and_stop_conditions_absent_when_not_set(self) -> None:
+        result = _render_directive(
+            goal="Explain recursion.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(),
+            mode="general",
+        )
+        self.assertNotIn("Reasoning:", result)
+        self.assertNotIn("Stop-conditions:", result)
+
+    def test_reasoning_appears_before_stop_conditions(self) -> None:
+        result = _render_directive(
+            goal="Build a plan.",
+            context_lines=[],
+            constraint_lines=[],
+            output_lines=[],
+            preferences=PromptPreferences(),
+            mode="general",
+            reasoning_lines=["The aim is to ship faster."],
+            stop_lines=["Only stop when each sprint has a deliverable."],
+        )
+        reasoning_pos = result.index("Reasoning:")
+        stop_pos = result.index("Stop-conditions:")
+        self.assertLess(reasoning_pos, stop_pos)
+
     def test_no_xml_tags_in_output(self) -> None:
         result = _render_directive(
             goal="Fix the auth bug.",

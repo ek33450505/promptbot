@@ -184,12 +184,16 @@ def collect_advanced_preferences(preferences: PromptPreferences) -> PromptPrefer
     )
     include = console.input("Must include (optional): ").strip()
     avoid = console.input("Avoid (optional): ").strip()
+    reasoning_goal = console.input("Reasoning / goal statement (optional): ").strip()
+    stop_conditions = console.input("Stop conditions (optional): ").strip()
     console.print("[green]Advanced options saved.[/green]\n")
     return replace(
         preferences,
         audience=audience,
         include=include,
         avoid=avoid,
+        reasoning_goal=reasoning_goal,
+        stop_conditions=stop_conditions,
         boost_level=0,
     )
 
